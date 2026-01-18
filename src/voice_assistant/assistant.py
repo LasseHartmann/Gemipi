@@ -82,6 +82,7 @@ class VoiceAssistant:
         self._state = AssistantState.LISTENING
         self._last_activity_time = 0.0
         self._wakeword_detector: WakeWordDetector | None = None
+        self._active_tasks: list[asyncio.Task] = []  # Track tasks for cancellation
 
         # Initialize wake word detector if enabled
         if self.wakeword_config.enabled:
@@ -162,6 +163,9 @@ class VoiceAssistant:
                             self._state = AssistantState.ACTIVATED
                             self._last_activity_time = time.monotonic()
 
+            except asyncio.CancelledError:
+                logger.debug("Receive task cancelled")
+                raise
             except Exception as e:
                 if self._running:
                     logger.error(f"Receive error: {e}")
@@ -253,9 +257,19 @@ class VoiceAssistant:
                 receive_task = asyncio.create_task(self._receive_audio(session))
                 timeout_task = asyncio.create_task(self._check_timeout())
 
-                # Wait until we return to listening state or shutdown
-                await asyncio.gather(send_task, receive_task, timeout_task)
+                # Track tasks for cancellation on shutdown
+                self._active_tasks = [send_task, receive_task, timeout_task]
 
+                try:
+                    # Wait until we return to listening state or shutdown
+                    await asyncio.gather(send_task, receive_task, timeout_task)
+                except asyncio.CancelledError:
+                    logger.debug("Session tasks cancelled")
+                finally:
+                    self._active_tasks = []
+
+        except asyncio.CancelledError:
+            logger.debug("Session cancelled")
         except Exception as e:
             print(f"Session error: {e}")
 
@@ -296,17 +310,26 @@ class VoiceAssistant:
                     # If wake word disabled, only run one session
                     break
 
+        except asyncio.CancelledError:
+            logger.debug("Main loop cancelled")
         except Exception as e:
             print(f"Error: {e}")
         finally:
             self.shutdown()
 
     def shutdown(self) -> None:
-        """Clean up resources."""
+        """Clean up resources and cancel running tasks."""
         if not self._running:
             return
         print("\nShutting down...")
         self._running = False
         self._state = AssistantState.LISTENING
+
+        # Cancel any active tasks
+        for task in self._active_tasks:
+            if not task.done():
+                task.cancel()
+        self._active_tasks = []
+
         self._capture.stop()
         self._player.stop()
