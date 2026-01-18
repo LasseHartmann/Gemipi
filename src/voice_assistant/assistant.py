@@ -24,6 +24,27 @@ class AssistantState(Enum):
     RESPONDING = auto()  # Gemini is generating a response
 
 
+# Tool definition for ending the session
+END_SESSION_TOOL = types.Tool(
+    function_declarations=[
+        types.FunctionDeclaration(
+            name="end_session",
+            description=(
+                "Call this function when the user wants to end the conversation. "
+                "Trigger phrases include: goodbye, bye, that's all, I'm done, go away, "
+                "leave me alone, end session, auf wiedersehen, tschüss, bis später, "
+                "das war's, ich bin fertig. Always say a sarcastic GLaDOS-style farewell "
+                "BEFORE calling this function."
+            ),
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={},  # No parameters needed
+            ),
+        )
+    ]
+)
+
+
 class VoiceAssistant:
     """Real-time voice assistant using Gemini Live API with wake word detection."""
 
@@ -96,12 +117,33 @@ class VoiceAssistant:
             self._last_activity_time = time.monotonic()
 
     async def _receive_audio(self, session) -> None:
-        """Receive and play audio from Gemini."""
+        """Receive and play audio from Gemini, handling tool calls."""
+        end_session_requested = False
+
         while self._running and self._state != AssistantState.LISTENING:
             try:
                 async for response in session.receive():
                     if not self._running or self._state == AssistantState.LISTENING:
                         break
+
+                    # Handle tool calls (e.g., end_session)
+                    if response.tool_call:
+                        for func_call in response.tool_call.function_calls:
+                            if func_call.name == "end_session":
+                                print("\n[GLaDOS is ending the session...]")
+                                end_session_requested = True
+                                # Send empty tool response to acknowledge
+                                await session.send(
+                                    input=types.LiveClientToolResponse(
+                                        function_responses=[
+                                            types.FunctionResponse(
+                                                name="end_session",
+                                                id=func_call.id,
+                                                response={"status": "session_ended"},
+                                            )
+                                        ]
+                                    )
+                                )
 
                     server_content = response.server_content
                     if server_content:
@@ -112,6 +154,11 @@ class VoiceAssistant:
                                     self._player.play_sync(part.inline_data.data)
 
                         if server_content.turn_complete:
+                            # If end_session was called, return to listening
+                            if end_session_requested:
+                                print("Returning to wake word listening...")
+                                self._state = AssistantState.LISTENING
+                                return
                             self._state = AssistantState.ACTIVATED
                             self._last_activity_time = time.monotonic()
 
@@ -164,6 +211,7 @@ class VoiceAssistant:
             system_instruction=types.Content(
                 parts=[types.Part(text=self.gemini_config.system_instruction)]
             ),
+            tools=[END_SESSION_TOOL],
         )
 
         try:
