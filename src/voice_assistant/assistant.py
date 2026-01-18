@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 import time
 from enum import Enum, auto
@@ -8,8 +9,11 @@ from google import genai
 from google.genai import types
 
 from .audio import AudioCapture, AudioPlayer
-from .config import AudioConfig, GeminiConfig, WakeWordConfig
+from .config import AudioConfig, GeminiConfig, GLaDOSEffectsConfig, WakeWordConfig
+from .glados_effects import GLaDOSEffectsProcessor
 from .wakeword import WakeWordDetector
+
+logger = logging.getLogger('assistant')
 
 
 class AssistantState(Enum):
@@ -28,19 +32,31 @@ class VoiceAssistant:
         audio_config: AudioConfig | None = None,
         gemini_config: GeminiConfig | None = None,
         wakeword_config: WakeWordConfig | None = None,
+        glados_effects_config: GLaDOSEffectsConfig | None = None,
     ):
         load_dotenv()
         self.audio_config = audio_config or AudioConfig()
         self.gemini_config = gemini_config or GeminiConfig()
         self.wakeword_config = wakeword_config or WakeWordConfig()
+        self.glados_effects_config = glados_effects_config or GLaDOSEffectsConfig()
 
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
             raise ValueError("GEMINI_API_KEY environment variable not set")
 
         self._client = genai.Client(api_key=api_key)
+
+        # Initialize GLaDOS effects processor if enabled
+        self._effects_processor: GLaDOSEffectsProcessor | None = None
+        if self.glados_effects_config.enabled:
+            self._effects_processor = GLaDOSEffectsProcessor(
+                config=self.glados_effects_config,
+                sample_rate=self.audio_config.playback_sample_rate,
+            )
+
+        # AEC disabled - using mic-mute during playback instead
         self._capture = AudioCapture(self.audio_config)
-        self._player = AudioPlayer(self.audio_config)
+        self._player = AudioPlayer(self.audio_config, effects_processor=self._effects_processor)
         self._running = False
         self._state = AssistantState.LISTENING
         self._last_activity_time = 0.0
@@ -55,10 +71,18 @@ class VoiceAssistant:
             )
 
     async def _send_audio(self, session) -> None:
-        """Send audio from microphone to Gemini."""
+        """Send audio from microphone to Gemini.
+
+        Mic is muted during RESPONDING state to prevent self-interruption.
+        """
         async for chunk in self._capture.stream():
             if not self._running or self._state == AssistantState.LISTENING:
                 break
+
+            # Mute mic while assistant is speaking (no AEC available)
+            if self._state == AssistantState.RESPONDING:
+                continue
+
             await session.send(
                 input=types.LiveClientRealtimeInput(
                     media_chunks=[
@@ -93,7 +117,7 @@ class VoiceAssistant:
 
             except Exception as e:
                 if self._running:
-                    print(f"Receive error: {e}")
+                    logger.error(f"Receive error: {e}")
                 break
 
     async def _check_timeout(self) -> None:
@@ -147,7 +171,35 @@ class VoiceAssistant:
                 model=self.gemini_config.model,
                 config=config,
             ) as session:
-                print("Connected to Gemini. Listening for your question...\n")
+                print("Connected to Gemini.")
+
+                # Send activation prompt to make Gemini speak a varied greeting
+                if self.wakeword_config.activation_prompt:
+                    prompt = "[Begrüßung] Begrüße den Benutzer kurz und knapp im GLaDOS-Stil. Variiere deine Begrüßung jedes Mal."
+                    await session.send(
+                        input=types.LiveClientContent(
+                            turns=[
+                                types.Content(
+                                    role="user",
+                                    parts=[types.Part(text=prompt)]
+                                )
+                            ],
+                            turn_complete=True,
+                        )
+                    )
+                    # Wait for and play the greeting response
+                    async for response in session.receive():
+                        server_content = response.server_content
+                        if server_content:
+                            if server_content.model_turn:
+                                for part in server_content.model_turn.parts:
+                                    if part.inline_data:
+                                        self._player.play_sync(part.inline_data.data)
+                            if server_content.turn_complete:
+                                break
+
+                print("Listening for your question...\n")
+                self._last_activity_time = time.monotonic()
 
                 send_task = asyncio.create_task(self._send_audio(session))
                 receive_task = asyncio.create_task(self._receive_audio(session))
@@ -171,6 +223,10 @@ class VoiceAssistant:
         else:
             print("Starting voice assistant (wake word disabled)...")
         print(f"Model: {self.gemini_config.model}")
+        if self.glados_effects_config.enabled:
+            print(f"GLaDOS effects: enabled (pitch +{self.glados_effects_config.pitch_shift} semitones)")
+        else:
+            print("GLaDOS effects: disabled")
         print("Press Ctrl+C to exit.\n")
 
         self._running = True
