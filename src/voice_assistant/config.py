@@ -65,7 +65,7 @@ class WakeWordConfig:
 @dataclass
 class GLaDOSEffectsConfig:
     """Configuration for GLaDOS-style audio effects."""
-    enabled: bool = True                  # Enable/disable audio effects
+    enabled: bool = False                 # Enable/disable audio effects
     pitch_shift: float = 2.0              # Semitones up (2.0 = robotic, not chipmunk)
     chorus_enabled: bool = True           # Add chorus/flanger for synthetic quality
     chorus_mix: float = 0.3               # Chorus wet/dry mix (0.0-1.0)
