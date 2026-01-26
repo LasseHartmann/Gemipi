@@ -1,13 +1,14 @@
+import argparse
 import asyncio
 import signal
-import sys
 
 from .assistant import VoiceAssistant
+from .config import DEFAULT_PERSONALITY, PERSONALITIES
 
 
-async def run_assistant() -> None:
+async def run_assistant(personality_name: str) -> None:
     """Run the voice assistant with proper signal handling."""
-    assistant = VoiceAssistant()
+    assistant = VoiceAssistant(personality=personality_name)
     loop = asyncio.get_running_loop()
 
     def handle_signal():
@@ -30,8 +31,29 @@ async def run_assistant() -> None:
 
 def main() -> None:
     """Entry point for the voice assistant."""
+    parser = argparse.ArgumentParser(description="Voice Assistant with multiple personalities")
+    parser.add_argument(
+        "-p", "--personality",
+        choices=list(PERSONALITIES.keys()),
+        default=DEFAULT_PERSONALITY,
+        help=f"Personality to use (default: {DEFAULT_PERSONALITY})",
+    )
+    parser.add_argument(
+        "-l", "--list",
+        action="store_true",
+        help="List available personalities and exit",
+    )
+    args = parser.parse_args()
+
+    if args.list:
+        print("Available personalities:")
+        for key, p in PERSONALITIES.items():
+            default = " (default)" if key == DEFAULT_PERSONALITY else ""
+            print(f"  {key}: {p.name}{default}")
+        return
+
     try:
-        asyncio.run(run_assistant())
+        asyncio.run(run_assistant(args.personality))
     except KeyboardInterrupt:
         pass
 

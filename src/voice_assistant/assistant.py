@@ -9,7 +9,15 @@ from google import genai
 from google.genai import types
 
 from .audio import AudioCapture, AudioPlayer
-from .config import AudioConfig, GeminiConfig, GLaDOSEffectsConfig, WakeWordConfig
+from .config import (
+    AudioConfig,
+    DEFAULT_PERSONALITY,
+    GeminiConfig,
+    GLaDOSEffectsConfig,
+    PERSONALITIES,
+    Personality,
+    WakeWordConfig,
+)
 from .glados_effects import GLaDOSEffectsProcessor
 from .wakeword import WakeWordDetector
 
@@ -50,16 +58,32 @@ class VoiceAssistant:
 
     def __init__(
         self,
+        personality: str | None = None,
         audio_config: AudioConfig | None = None,
         gemini_config: GeminiConfig | None = None,
         wakeword_config: WakeWordConfig | None = None,
         glados_effects_config: GLaDOSEffectsConfig | None = None,
     ):
         load_dotenv()
+
+        # Load personality preset if specified
+        personality_name = personality or DEFAULT_PERSONALITY
+        if personality_name not in PERSONALITIES:
+            raise ValueError(f"Unknown personality: {personality_name}")
+        self.personality = PERSONALITIES[personality_name]
+
+        # Use personality settings as defaults, allow overrides
         self.audio_config = audio_config or AudioConfig()
-        self.gemini_config = gemini_config or GeminiConfig()
-        self.wakeword_config = wakeword_config or WakeWordConfig()
-        self.glados_effects_config = glados_effects_config or GLaDOSEffectsConfig()
+        self.gemini_config = gemini_config or GeminiConfig(
+            system_instruction=self.personality.system_instruction
+        )
+        self.wakeword_config = wakeword_config or WakeWordConfig(
+            model_path=self.personality.wakeword_model,
+            activation_prompt=self.personality.activation_prompt,
+        )
+        self.glados_effects_config = glados_effects_config or GLaDOSEffectsConfig(
+            enabled=self.personality.effects_enabled
+        )
 
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
@@ -227,7 +251,7 @@ class VoiceAssistant:
 
                 # Send activation prompt to make Gemini speak a varied greeting
                 if self.wakeword_config.activation_prompt:
-                    prompt = "[Begrüßung] Begrüße den Benutzer kurz und knapp im GLaDOS-Stil. Variiere deine Begrüßung jedes Mal."
+                    prompt = f"[Greeting] Greet the user briefly in your character style. Vary your greeting each time. Example tone: '{self.wakeword_config.activation_prompt}'"
                     await session.send(
                         input=types.LiveClientContent(
                             turns=[
@@ -277,18 +301,15 @@ class VoiceAssistant:
 
     async def run(self) -> None:
         """Start the voice assistant with wake word detection."""
+        print(f"Personality: {self.personality.name}")
         if self.wakeword_config.enabled:
-            print("Starting voice assistant with wake word detection...")
             print(f"Wake word model: {self._wakeword_detector.model_names}")
             print(f"Threshold: {self.wakeword_config.threshold}")
             print(f"Timeout: {self.wakeword_config.timeout}s")
         else:
-            print("Starting voice assistant (wake word disabled)...")
-        print(f"Model: {self.gemini_config.model}")
+            print("Wake word: disabled")
         if self.glados_effects_config.enabled:
-            print(f"GLaDOS effects: enabled (pitch +{self.glados_effects_config.pitch_shift} semitones)")
-        else:
-            print("GLaDOS effects: disabled")
+            print(f"Audio effects: enabled (pitch +{self.glados_effects_config.pitch_shift} semitones)")
         print("Press Ctrl+C to exit.\n")
 
         self._running = True

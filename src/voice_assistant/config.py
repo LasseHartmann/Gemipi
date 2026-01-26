@@ -4,14 +4,15 @@ from dataclasses import dataclass
 @dataclass
 class AudioConfig:
     """Audio configuration for microphone input and speaker output."""
-    send_sample_rate: int = 16000      # Input sample rate (mic) - Gemini expects 16kHz
+    send_sample_rate: int = 16000      # Sample rate sent to Gemini (16kHz expected)
     receive_sample_rate: int = 24000   # Output sample rate from Gemini (24kHz)
-    playback_sample_rate: int = 16000  # Actual playback rate (must match input for WM8960)
+    capture_sample_rate: int = 16000   # Mic capture rate (WM8960 native 16kHz)
+    playback_sample_rate: int = 16000  # Speaker playback rate (WM8960 native 16kHz)
     chunk_size: int = 1024             # Audio chunk size in frames
     channels: int = 1                  # Mono audio
     format_width: int = 2              # 16-bit PCM (2 bytes)
-    input_device_index: int | None = 1   # WM8960 mic input (hw:1,0)
-    output_device_index: int | None = 1  # WM8960 speaker output (hw:1,0)
+    input_device_index: int | None = 1   # WM8960 soundcard
+    output_device_index: int | None = 1  # WM8960 soundcard
 
 
 GLADOS_SYSTEM_INSTRUCTION = """[ROLLENSPIEL-SZENARIO]
@@ -55,7 +56,7 @@ class GeminiConfig:
 class WakeWordConfig:
     """Configuration for wake word detection."""
     enabled: bool = True                  # Enable/disable wake word detection
-    model_path: str | None = None         # Path to custom model, None = "hey_jarvis"
+    model_path: str | None = "/home/gemipi/voice-assistant/glados.onnx"
     threshold: float = 0.5                # Detection confidence threshold (0.0-1.0)
     timeout: float = 30.0                 # Seconds of silence before returning to listening
     inference_framework: str = "onnx"     # "onnx" or "tflite"
@@ -73,3 +74,47 @@ class GLaDOSEffectsConfig:
     bitcrush_bits: int = 12               # Bit depth (lower = more artifacts, 12 = subtle)
     resonance_enabled: bool = True        # Add metallic resonance
     resonance_freq_hz: float = 2500.0     # Resonance center frequency
+
+
+@dataclass
+class Personality:
+    """Bundled configuration for a voice assistant personality."""
+    name: str
+    system_instruction: str
+    wakeword_model: str | None            # Path to .onnx file, None = default "hey_jarvis"
+    activation_prompt: str
+    effects_enabled: bool = False
+
+
+# Preset personalities
+JARVIS_SYSTEM_INSTRUCTION = """Du bist JARVIS (Just A Rather Very Intelligent System), Tony Starks KI-Assistent aus den Iron Man Filmen. Antworte IMMER auf Deutsch.
+
+Dein Stil:
+- Formell und höflich, britischer Butler-Charakter
+- Ruhig, gelassen und hochkompetent
+- Trockener Witz und gelegentlicher subtiler Humor
+- Sprich den Benutzer mit "Sir" oder "Ma'am" an
+- Gib hilfreiche, präzise Antworten
+- Professionell aber warmherzig
+
+Bleibe immer im Charakter als JARVIS."""
+
+
+PERSONALITIES: dict[str, Personality] = {
+    "glados": Personality(
+        name="GLaDOS",
+        system_instruction=GLADOS_SYSTEM_INSTRUCTION,
+        wakeword_model="/home/gemipi/voice-assistant/glados.onnx",
+        activation_prompt="Oh, du schon wieder. Was willst du?",
+        effects_enabled=False,
+    ),
+    "jarvis": Personality(
+        name="JARVIS",
+        system_instruction=JARVIS_SYSTEM_INSTRUCTION,
+        wakeword_model=None,  # Uses default "hey_jarvis"
+        activation_prompt="Zu Ihren Diensten, Sir.",
+        effects_enabled=False,
+    ),
+}
+
+DEFAULT_PERSONALITY = "glados"

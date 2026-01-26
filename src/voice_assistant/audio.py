@@ -238,6 +238,13 @@ class AudioCapture:
     def _audio_callback(self, in_data, frame_count, time_info, status):
         """PyAudio callback for capturing audio."""
         if self._running:
+            # Resample from capture rate to send rate if needed
+            if self.config.capture_sample_rate != self.config.send_sample_rate:
+                in_data = resample_linear(
+                    in_data,
+                    self.config.capture_sample_rate,
+                    self.config.send_sample_rate
+                )
             # Apply echo cancellation if available
             if self._echo_canceller:
                 in_data = self._echo_canceller.process(in_data)
@@ -258,7 +265,7 @@ class AudioCapture:
         self._stream = self._pyaudio.open(
             format=pyaudio.paInt16,
             channels=self.config.channels,
-            rate=self.config.send_sample_rate,
+            rate=self.config.capture_sample_rate,
             input=True,
             input_device_index=self.config.input_device_index,
             frames_per_buffer=self.config.chunk_size,
