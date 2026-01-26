@@ -10,6 +10,9 @@ dependencies = [
     "python-dotenv>=1.0.0",
 ]
 
+[project.optional-dependencies]
+eye = ["pygame>=2.5.0"]
+
 [tool.uv]
 # openwakeword requires tflite-runtime on Linux which doesn't support Python 3.13
 # Override to skip tflite-runtime since we only use ONNX inference

@@ -21,6 +21,13 @@ from .config import (
 from .glados_effects import GLaDOSEffectsProcessor
 from .wakeword import WakeWordDetector
 
+try:
+    from .eye_display import create_eye_display
+    EYE_DISPLAY_AVAILABLE = True
+except ImportError:
+    EYE_DISPLAY_AVAILABLE = False
+    create_eye_display = None
+
 logger = logging.getLogger('assistant')
 
 
@@ -63,6 +70,7 @@ class VoiceAssistant:
         gemini_config: GeminiConfig | None = None,
         wakeword_config: WakeWordConfig | None = None,
         glados_effects_config: GLaDOSEffectsConfig | None = None,
+        enable_eye_display: bool = False,
     ):
         load_dotenv()
 
@@ -115,6 +123,25 @@ class VoiceAssistant:
                 threshold=self.wakeword_config.threshold,
                 inference_framework=self.wakeword_config.inference_framework,
             )
+
+        # Initialize eye display if enabled
+        self._eye_display = None
+        if enable_eye_display:
+            if EYE_DISPLAY_AVAILABLE:
+                self._eye_display = create_eye_display(personality_name, fullscreen=True)
+            else:
+                logger.warning("Eye display requested but pygame not installed")
+
+    def _update_eye_state(self) -> None:
+        """Update the eye display state based on assistant state."""
+        if not self._eye_display:
+            return
+        if self._state == AssistantState.LISTENING:
+            self._eye_display.set_state("idle")
+        elif self._state == AssistantState.ACTIVATED:
+            self._eye_display.set_state("listening")
+        elif self._state == AssistantState.RESPONDING:
+            self._eye_display.set_state("responding")
 
     async def _send_audio(self, session) -> None:
         """Send audio from microphone to Gemini.
@@ -174,6 +201,7 @@ class VoiceAssistant:
                     if server_content:
                         if server_content.model_turn:
                             self._state = AssistantState.RESPONDING
+                            self._update_eye_state()
                             for part in server_content.model_turn.parts:
                                 if part.inline_data:
                                     self._player.play_sync(part.inline_data.data)
@@ -183,8 +211,10 @@ class VoiceAssistant:
                             if end_session_requested:
                                 print("Returning to wake word listening...")
                                 self._state = AssistantState.LISTENING
+                                self._update_eye_state()
                                 return
                             self._state = AssistantState.ACTIVATED
+                            self._update_eye_state()
                             self._last_activity_time = time.monotonic()
 
             except asyncio.CancelledError:
@@ -204,6 +234,7 @@ class VoiceAssistant:
                 if elapsed >= self.wakeword_config.timeout:
                     print("\nTimeout - returning to wake word listening...")
                     self._state = AssistantState.LISTENING
+                    self._update_eye_state()
                     break
 
     async def _listen_for_wakeword(self) -> bool:
@@ -232,6 +263,7 @@ class VoiceAssistant:
     async def _run_session(self) -> None:
         """Run a single Gemini session after wake word detection."""
         self._state = AssistantState.ACTIVATED
+        self._update_eye_state()
         self._last_activity_time = time.monotonic()
 
         config = types.LiveConnectConfig(
@@ -316,6 +348,11 @@ class VoiceAssistant:
         self._capture.start()
         self._player.start()
 
+        # Start eye display if enabled
+        if self._eye_display:
+            self._eye_display.start()
+            self._update_eye_state()
+
         try:
             while self._running:
                 if self.wakeword_config.enabled:
@@ -354,3 +391,7 @@ class VoiceAssistant:
 
         self._capture.stop()
         self._player.stop()
+
+        # Stop eye display if running
+        if self._eye_display:
+            self._eye_display.stop()

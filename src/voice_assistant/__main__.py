@@ -6,9 +6,9 @@ from .assistant import VoiceAssistant
 from .config import DEFAULT_PERSONALITY, PERSONALITIES
 
 
-async def run_assistant(personality_name: str) -> None:
+async def run_assistant(personality_name: str, enable_eye: bool) -> None:
     """Run the voice assistant with proper signal handling."""
-    assistant = VoiceAssistant(personality=personality_name)
+    assistant = VoiceAssistant(personality=personality_name, enable_eye_display=enable_eye)
     loop = asyncio.get_running_loop()
 
     def handle_signal():
@@ -43,6 +43,11 @@ def main() -> None:
         action="store_true",
         help="List available personalities and exit",
     )
+    parser.add_argument(
+        "-e", "--eye",
+        action="store_true",
+        help="Enable animated eye display (requires pygame)",
+    )
     args = parser.parse_args()
 
     if args.list:
@@ -53,7 +58,7 @@ def main() -> None:
         return
 
     try:
-        asyncio.run(run_assistant(args.personality))
+        asyncio.run(run_assistant(args.personality, args.eye))
     except KeyboardInterrupt:
         pass
 
