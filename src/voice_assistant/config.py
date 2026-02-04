@@ -6,13 +6,13 @@ class AudioConfig:
     """Audio configuration for microphone input and speaker output."""
     send_sample_rate: int = 16000      # Sample rate sent to Gemini (16kHz expected)
     receive_sample_rate: int = 24000   # Output sample rate from Gemini (24kHz)
-    capture_sample_rate: int = 16000   # Mic capture rate (WM8960 native 16kHz)
-    playback_sample_rate: int = 16000  # Speaker playback rate (WM8960 native 16kHz)
+    capture_sample_rate: int = 48000   # Mic capture rate (Hangouts Meet 48kHz)
+    playback_sample_rate: int = 48000  # Speaker playback rate (Hangouts Meet 48kHz)
     chunk_size: int = 1024             # Audio chunk size in frames
     channels: int = 1                  # Mono audio
     format_width: int = 2              # 16-bit PCM (2 bytes)
-    input_device_index: int | None = 1   # WM8960 soundcard
-    output_device_index: int | None = 1  # WM8960 soundcard
+    input_device_index: int | None = 2   # Hangouts Meet speakermic
+    output_device_index: int | None = 2  # Hangouts Meet speakermic
 
 
 GLADOS_SYSTEM_INSTRUCTION = """[ROLLENSPIEL-SZENARIO]
@@ -84,6 +84,7 @@ class Personality:
     wakeword_model: str | None            # Path to .onnx file, None = default "hey_jarvis"
     activation_prompt: str
     effects_enabled: bool = False
+    voice: str | None = None              # Gemini voice name (e.g., "Kore", "Puck", "Charon")
 
 
 # Preset personalities
@@ -106,7 +107,8 @@ PERSONALITIES: dict[str, Personality] = {
         system_instruction=GLADOS_SYSTEM_INSTRUCTION,
         wakeword_model="/home/gemipi/voice-assistant/glados.onnx",
         activation_prompt="Oh, du schon wieder. Was willst du?",
-        effects_enabled=False,
+        effects_enabled=False,  # Disabled - crashes at 48kHz
+        voice="Aoede",  # Female voice
     ),
     "jarvis": Personality(
         name="JARVIS",
@@ -114,6 +116,7 @@ PERSONALITIES: dict[str, Personality] = {
         wakeword_model=None,  # Uses default "hey_jarvis"
         activation_prompt="Zu Ihren Diensten, Sir.",
         effects_enabled=False,
+        voice="Charon",  # Male voice
     ),
 }
 

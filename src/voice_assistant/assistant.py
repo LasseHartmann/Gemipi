@@ -48,7 +48,7 @@ END_SESSION_TOOL = types.Tool(
                 "Call this function when the user wants to end the conversation. "
                 "Trigger phrases include: goodbye, bye, that's all, I'm done, go away, "
                 "leave me alone, end session, auf wiedersehen, tschüss, bis später, "
-                "das war's, ich bin fertig. Always say a sarcastic GLaDOS-style farewell "
+                "das war's, ich bin fertig. Always say a farewell in your character's style "
                 "BEFORE calling this function."
             ),
             parameters=types.Schema(
@@ -182,7 +182,7 @@ class VoiceAssistant:
                     if response.tool_call:
                         for func_call in response.tool_call.function_calls:
                             if func_call.name == "end_session":
-                                print("\n[GLaDOS is ending the session...]")
+                                print("\n[Ending session...]")
                                 end_session_requested = True
                                 # Send empty tool response to acknowledge
                                 await session.send(
@@ -272,6 +272,13 @@ class VoiceAssistant:
                 parts=[types.Part(text=self.gemini_config.system_instruction)]
             ),
             tools=[END_SESSION_TOOL],
+            speech_config=types.SpeechConfig(
+                voice_config=types.VoiceConfig(
+                    prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                        voice_name=self.personality.voice
+                    )
+                )
+            ) if self.personality.voice else None,
         )
 
         try:
