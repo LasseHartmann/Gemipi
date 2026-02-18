@@ -30,6 +30,33 @@ def _suppress_alsa_errors():
         os.close(old_stderr)
 
 
+def find_device_by_name(name: str, need_input: bool = True, need_output: bool = True) -> int | None:
+    """Find audio device index by name substring.
+
+    Args:
+        name: Substring to match in device name (case-insensitive).
+        need_input: Device must have input channels.
+        need_output: Device must have output channels.
+
+    Returns:
+        Device index if found, None otherwise.
+    """
+    with _suppress_alsa_errors():
+        p = pyaudio.PyAudio()
+    try:
+        for i in range(p.get_device_count()):
+            info = p.get_device_info_by_index(i)
+            if name.lower() in info["name"].lower():
+                if need_input and info["maxInputChannels"] == 0:
+                    continue
+                if need_output and info["maxOutputChannels"] == 0:
+                    continue
+                return i
+    finally:
+        p.terminate()
+    return None
+
+
 class AcousticEchoCanceller:
     """Echo suppression using playback-aware gating with interrupt detection.
 
@@ -262,12 +289,18 @@ class AudioCapture:
         with _suppress_alsa_errors():
             self._pyaudio = pyaudio.PyAudio()
         self._running = True
+        # Resolve device index by name if not specified
+        device_index = self.config.input_device_index
+        if device_index is None and self.config.device_name:
+            device_index = find_device_by_name(
+                self.config.device_name, need_input=True, need_output=False
+            )
         self._stream = self._pyaudio.open(
             format=pyaudio.paInt16,
             channels=self.config.channels,
             rate=self.config.capture_sample_rate,
             input=True,
-            input_device_index=self.config.input_device_index,
+            input_device_index=device_index,
             frames_per_buffer=self.config.chunk_size,
             stream_callback=self._audio_callback,
         )
@@ -335,12 +368,18 @@ class AudioPlayer:
         """Initialize and start the audio playback stream."""
         with _suppress_alsa_errors():
             self._pyaudio = pyaudio.PyAudio()
+        # Resolve device index by name if not specified
+        device_index = self.config.output_device_index
+        if device_index is None and self.config.device_name:
+            device_index = find_device_by_name(
+                self.config.device_name, need_input=False, need_output=True
+            )
         self._stream = self._pyaudio.open(
             format=pyaudio.paInt16,
             channels=self.config.channels,
             rate=self.config.playback_sample_rate,
             output=True,
-            output_device_index=self.config.output_device_index,
+            output_device_index=device_index,
             frames_per_buffer=self.config.chunk_size,
         )
         self._running = True

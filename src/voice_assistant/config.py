@@ -6,13 +6,14 @@ class AudioConfig:
     """Audio configuration for microphone input and speaker output."""
     send_sample_rate: int = 16000      # Sample rate sent to Gemini (16kHz expected)
     receive_sample_rate: int = 24000   # Output sample rate from Gemini (24kHz)
-    capture_sample_rate: int = 48000   # Mic capture rate (Hangouts Meet 48kHz)
-    playback_sample_rate: int = 48000  # Speaker playback rate (Hangouts Meet 48kHz)
+    capture_sample_rate: int = 16000   # Mic capture rate (WM8960 16kHz)
+    playback_sample_rate: int = 16000  # Speaker playback rate (WM8960 16kHz)
     chunk_size: int = 1024             # Audio chunk size in frames
     channels: int = 1                  # Mono audio
     format_width: int = 2              # 16-bit PCM (2 bytes)
-    input_device_index: int | None = 2   # Hangouts Meet speakermic
-    output_device_index: int | None = 2  # Hangouts Meet speakermic
+    input_device_index: int | None = None   # Auto-detect by name
+    output_device_index: int | None = None  # Auto-detect by name
+    device_name: str = "wm8960"             # Device name to auto-detect
 
 
 GLADOS_SYSTEM_INSTRUCTION = """[ROLLENSPIEL-SZENARIO]
